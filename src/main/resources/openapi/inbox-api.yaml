@@ -1,0 +1,381 @@
+openapi: 3.0.3
+info:
+  title: Kodano Integration Inbox
+  description: Ingestion bus for Magento order webhooks and vending machine sales batches
+  version: 1.0.0
+servers:
+  - url: /
+tags:
+  - name: MagentoEvents
+  - name: VendingBatches
+  - name: Orders
+  - name: Reconciliation
+  - name: DeadLetter
+
+paths:
+  /api/v1/inbox/magento/events:
+    post:
+      tags: [MagentoEvents]
+      operationId: ingestMagentoEvent
+      security:
+        - ApiToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MagentoEventDto'
+      responses:
+        '202':
+          description: Event stored in the inbox, or already known
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MagentoEventResultDto'
+        '400':
+          $ref: '#/components/responses/MalformedEvent'
+        '401':
+          $ref: '#/components/responses/UnknownSource'
+        '403':
+          $ref: '#/components/responses/SourceScopeViolation'
+
+  /api/v1/inbox/vending/batches:
+    post:
+      tags: [VendingBatches]
+      operationId: ingestVendingBatch
+      security:
+        - ApiToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendingBatchDto'
+      responses:
+        '202':
+          description: Per line ingestion result, whole batch idempotent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendingBatchResultDto'
+        '400':
+          $ref: '#/components/responses/MalformedEvent'
+        '401':
+          $ref: '#/components/responses/UnknownSource'
+        '403':
+          $ref: '#/components/responses/SourceScopeViolation'
+
+  /api/v1/orders/{orderId}:
+    get:
+      tags: [Orders]
+      operationId: getOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order projection built from received events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDto'
+        '404':
+          description: Order not known yet
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDto'
+
+  /api/v1/inbox/reconciliation:
+    get:
+      tags: [Reconciliation]
+      operationId: getReconciliation
+      parameters:
+        - name: source
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: device
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: day
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Accepted count and missing sequence numbers for a device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceReconciliationDto'
+        '400':
+          $ref: '#/components/responses/MalformedEvent'
+
+  /api/v1/inbox/dead-letter:
+    get:
+      tags: [DeadLetter]
+      operationId: listDeadLetters
+      responses:
+        '200':
+          description: Messages parked after exhausting processing attempts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeadLetterDto'
+
+  /api/v1/inbox/dead-letter/{id}/retry:
+    post:
+      tags: [DeadLetter]
+      operationId: retryDeadLetter
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Message rescheduled for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetryResultDto'
+        '404':
+          description: Dead letter not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDto'
+
+components:
+  securitySchemes:
+    ApiToken:
+      type: apiKey
+      in: header
+      name: X-Api-Token
+
+  responses:
+    MalformedEvent:
+      description: Request rejected as malformed
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDto'
+    UnknownSource:
+      description: Missing or unknown api token
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDto'
+    SourceScopeViolation:
+      description: Token not allowed to publish as this source
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDto'
+
+  schemas:
+    MagentoEventDto:
+      type: object
+      required: [eventId, orderId, type, occurredAt]
+      properties:
+        eventId:
+          type: string
+          minLength: 1
+        orderId:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          enum: [order.placed, order.paid, order.cancelled, order.refunded]
+        occurredAt:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
+
+    MagentoEventResultDto:
+      type: object
+      required: [eventId, status]
+      properties:
+        eventId:
+          type: string
+        status:
+          $ref: '#/components/schemas/IngestStatusDto'
+
+    VendingBatchDto:
+      type: object
+      required: [deviceId, batchId, lines]
+      properties:
+        deviceId:
+          type: string
+          minLength: 1
+        batchId:
+          type: string
+          minLength: 1
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/VendingSaleLineDto'
+
+    VendingSaleLineDto:
+      type: object
+      required: [seq, saleId, sku, qty, amountMinor, currency, soldAt]
+      properties:
+        seq:
+          type: integer
+          format: int64
+          minimum: 1
+        saleId:
+          type: string
+          minLength: 1
+        sku:
+          type: string
+          minLength: 1
+        qty:
+          type: integer
+          minimum: 1
+        amountMinor:
+          type: integer
+          format: int64
+          minimum: 0
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        soldAt:
+          type: string
+          format: date-time
+
+    VendingBatchResultDto:
+      type: object
+      required: [deviceId, batchId, lines]
+      properties:
+        deviceId:
+          type: string
+        batchId:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/VendingLineResultDto'
+
+    VendingLineResultDto:
+      type: object
+      required: [seq, status]
+      properties:
+        seq:
+          type: integer
+          format: int64
+        status:
+          $ref: '#/components/schemas/IngestStatusDto'
+        reason:
+          type: string
+
+    IngestStatusDto:
+      type: string
+      enum: [ACCEPTED, DUPLICATE, REJECTED]
+
+    OrderDto:
+      type: object
+      required: [orderId, status]
+      properties:
+        orderId:
+          type: string
+        status:
+          type: string
+          enum: [PLACED, PAID, CANCELLED, REFUNDED]
+        placedAt:
+          type: string
+          format: date-time
+        paidAt:
+          type: string
+          format: date-time
+        cancelledAt:
+          type: string
+          format: date-time
+        refundedAt:
+          type: string
+          format: date-time
+        lastEventAt:
+          type: string
+          format: date-time
+
+    DeviceReconciliationDto:
+      type: object
+      required: [deviceId, acceptedCount, missingSeqs]
+      properties:
+        deviceId:
+          type: string
+        acceptedCount:
+          type: integer
+          format: int64
+        missingSeqs:
+          type: array
+          items:
+            type: integer
+            format: int64
+
+    DeadLetterDto:
+      type: object
+      required: [id, inboxMessageId, reasonCode, parkedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        inboxMessageId:
+          type: string
+          format: uuid
+        sourceCode:
+          type: string
+        externalId:
+          type: string
+        reasonCode:
+          type: string
+        detail:
+          type: string
+        attempts:
+          type: integer
+        parkedAt:
+          type: string
+          format: date-time
+
+    RetryResultDto:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+
+    ProblemDto:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          enum: [DUPLICATE_DELIVERY, SEQUENCE_GAP_DETECTED, MALFORMED_EVENT, UNKNOWN_SOURCE, SOURCE_SCOPE_VIOLATION]
