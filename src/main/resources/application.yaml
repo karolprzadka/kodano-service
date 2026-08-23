@@ -12,3 +12,9 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+
+inbox:
+  poll-interval: 500ms
+  batch-size: 20
+  max-attempts: 5
+  backoff: 2s
