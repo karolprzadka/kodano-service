@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: kodano-inbox
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/kodano}
+    username: ${DB_USER:kodano}
+    password: ${DB_PASSWORD:kodano}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
