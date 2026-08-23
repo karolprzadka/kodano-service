@@ -233,29 +233,23 @@ components:
             $ref: '#/components/schemas/VendingSaleLineDto'
 
     VendingSaleLineDto:
+      description: Line level constraints are checked per line, so one bad line does not reject the whole batch
       type: object
-      required: [seq, saleId, sku, qty, amountMinor, currency, soldAt]
       properties:
         seq:
           type: integer
           format: int64
-          minimum: 1
         saleId:
           type: string
-          minLength: 1
         sku:
           type: string
-          minLength: 1
         qty:
           type: integer
-          minimum: 1
         amountMinor:
           type: integer
           format: int64
-          minimum: 0
         currency:
           type: string
-          pattern: '^[A-Z]{3}$'
         soldAt:
           type: string
           format: date-time
