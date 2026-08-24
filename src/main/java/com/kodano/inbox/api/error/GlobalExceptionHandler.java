@@ -1,5 +1,6 @@
 package com.kodano.inbox.api.error;
 
+import com.kodano.inbox.api.order.OrderNotFoundException;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -24,5 +25,10 @@ class GlobalExceptionHandler {
    @ExceptionHandler(HttpMessageNotReadableException.class)
    ProblemDetail onUnreadablePayload(HttpMessageNotReadableException exception) {
       return Problems.of(HttpStatus.BAD_REQUEST, ErrorCode.MALFORMED_EVENT, UNREADABLE_BODY);
+   }
+
+   @ExceptionHandler(OrderNotFoundException.class)
+   ProblemDetail onMissingOrder(OrderNotFoundException exception) {
+      return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, exception.getMessage());
    }
 }
