@@ -1,0 +1,5 @@
+inbox:
+  poll-interval: 100ms
+  batch-size: 20
+  max-attempts: 3
+  backoff: 100ms
