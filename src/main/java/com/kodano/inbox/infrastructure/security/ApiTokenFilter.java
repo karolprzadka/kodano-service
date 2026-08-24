@@ -23,7 +23,7 @@ public class ApiTokenFilter extends OncePerRequestFilter {
 
    public static final String SOURCE_ATTRIBUTE = "kodano.source";
 
-   private static final Pattern INGEST_PATH = Pattern.compile("^/api/v1/inbox/(\\w+)/.+");
+   private static final Pattern INGEST_PATH = Pattern.compile("^/api/v1/inbox/(magento|vending)/.+");
    private static final String TOKEN_HEADER = "X-Api-Token";
    private static final String UNKNOWN_TOKEN = "Missing or unknown api token";
    private static final String SCOPE_VIOLATION = "Token is bound to source '%s' and cannot publish as '%s'";
