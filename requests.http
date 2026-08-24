@@ -1,0 +1,95 @@
+### Scenariusz: zdarzenia magento nie po kolei -> projekcja -> paczki vending z luka -> rekoncyliacja -> DLQ -> retry
+### Wymaga uruchomionego stacku: docker compose up --build
+
+@host = http://localhost:8080/api/v1
+@magento = magento-dev-token
+@vending = vending-dev-token
+
+### 1. paid dociera jako pierwszy, mimo ze zdarzyl sie jako drugi
+POST {{host}}/inbox/magento/events
+X-Api-Token: {{magento}}
+Content-Type: application/json
+
+{"eventId": "e-paid", "orderId": "ORD-1", "type": "order.paid", "occurredAt": "2026-07-27T10:05:00Z"}
+
+### 2. spozniony cancelled, starszy niz aktualny stan - nie moze cofnac statusu
+POST {{host}}/inbox/magento/events
+X-Api-Token: {{magento}}
+Content-Type: application/json
+
+{"eventId": "e-cancelled", "orderId": "ORD-1", "type": "order.cancelled", "occurredAt": "2026-07-27T10:02:00Z"}
+
+### 3. placed dociera na koncu
+POST {{host}}/inbox/magento/events
+X-Api-Token: {{magento}}
+Content-Type: application/json
+
+{"eventId": "e-placed", "orderId": "ORD-1", "type": "order.placed", "occurredAt": "2026-07-27T10:00:00Z"}
+
+### 4. ten sam eventId drugi raz -> DUPLICATE, bez drugiego rekordu
+POST {{host}}/inbox/magento/events
+X-Api-Token: {{magento}}
+Content-Type: application/json
+
+{"eventId": "e-paid", "orderId": "ORD-1", "type": "order.paid", "occurredAt": "2026-07-27T10:05:00Z"}
+
+### 5. projekcja: PAID, wszystkie znaczniki czasu wypelnione, status niecofniety
+GET {{host}}/orders/ORD-1
+
+### 6. token magento probuje wyslac paczke jako vending -> 403 SOURCE_SCOPE_VIOLATION
+POST {{host}}/inbox/vending/batches
+X-Api-Token: {{magento}}
+Content-Type: application/json
+
+{"deviceId": "D1", "batchId": "b-scope", "lines": [{"seq": 1, "saleId": "s1", "sku": "SOCZ-1DAY-30", "qty": 1, "amountMinor": 12900, "currency": "PLN", "soldAt": "2026-07-27T09:00:00Z"}]}
+
+### 7. paczka 5..7 przychodzi pierwsza (wczesniejsza sie spoznila), jedna linia bledna -> REJECTED z powodem
+POST {{host}}/inbox/vending/batches
+X-Api-Token: {{vending}}
+Content-Type: application/json
+
+{"deviceId": "D1", "batchId": "b-2", "lines": [
+  {"seq": 5, "saleId": "s5", "sku": "SOCZ-1DAY-30", "qty": 1, "amountMinor": 12900, "currency": "PLN", "soldAt": "2026-07-27T09:00:00Z"},
+  {"seq": 6, "saleId": "s6", "sku": "PLYN-360", "qty": 1, "amountMinor": 4900, "currency": "pln", "soldAt": "2026-07-27T09:01:00Z"},
+  {"seq": 7, "saleId": "s7", "sku": "KROPLE-10", "qty": 1, "amountMinor": 2500, "currency": "PLN", "soldAt": "2026-07-27T09:02:00Z"}
+]}
+
+### 8. rekoncyliacja: braki 1..4 (spozniona paczka) oraz 6 (linia odrzucona)
+GET {{host}}/inbox/reconciliation?source=vending&device=D1
+
+### 9. dochodzi spozniona paczka 1..4 - luka na poczatku ciagu znika
+POST {{host}}/inbox/vending/batches
+X-Api-Token: {{vending}}
+Content-Type: application/json
+
+{"deviceId": "D1", "batchId": "b-1", "lines": [
+  {"seq": 1, "saleId": "s1", "sku": "SOCZ-1DAY-30", "qty": 1, "amountMinor": 12900, "currency": "PLN", "soldAt": "2026-07-27T08:00:00Z"},
+  {"seq": 2, "saleId": "s2", "sku": "SOCZ-MIES-6", "qty": 1, "amountMinor": 19900, "currency": "PLN", "soldAt": "2026-07-27T08:10:00Z"},
+  {"seq": 3, "saleId": "s3", "sku": "PLYN-360", "qty": 2, "amountMinor": 9800, "currency": "PLN", "soldAt": "2026-07-27T08:20:00Z"},
+  {"seq": 4, "saleId": "s4", "sku": "KROPLE-10", "qty": 1, "amountMinor": 2500, "currency": "PLN", "soldAt": "2026-07-27T08:30:00Z"}
+]}
+
+### 10. powtorka paczki 5..7 - duplikaty nie licza sie drugi raz i nie zapychaja luki
+POST {{host}}/inbox/vending/batches
+X-Api-Token: {{vending}}
+Content-Type: application/json
+
+{"deviceId": "D1", "batchId": "b-2", "lines": [
+  {"seq": 5, "saleId": "s5", "sku": "SOCZ-1DAY-30", "qty": 1, "amountMinor": 12900, "currency": "PLN", "soldAt": "2026-07-27T09:00:00Z"},
+  {"seq": 7, "saleId": "s7", "sku": "KROPLE-10", "qty": 1, "amountMinor": 2500, "currency": "PLN", "soldAt": "2026-07-27T09:02:00Z"}
+]}
+
+### 11. rekoncyliacja: zostaje wylacznie trwaly brak 6, licznik i suma bez zmian
+GET {{host}}/inbox/reconciliation?source=vending&device=D1
+
+### 12. brak tokena -> 401 UNKNOWN_SOURCE
+POST {{host}}/inbox/magento/events
+Content-Type: application/json
+
+{"eventId": "e-no-token", "orderId": "ORD-2", "type": "order.placed", "occurredAt": "2026-07-27T10:00:00Z"}
+
+### 13. zaparkowane komunikaty (po wyczerpaniu prob)
+GET {{host}}/inbox/dead-letter
+
+### 14. ponowne skierowanie do przetworzenia po naprawie przyczyny (id z punktu 13)
+POST {{host}}/inbox/dead-letter/00000000-0000-0000-0000-000000000000/retry
