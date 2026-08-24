@@ -42,11 +42,15 @@ public class InboxProcessor {
       int attempts = message.attempts() + 1;
       if (attempts >= inboxProperties.maxAttempts()) {
          log.warn(PARKED_LOG, message.id(), message.sourceCode(), attempts, cause.getMessage());
-         inboxRepository.markDead(message.id(), cause.getClass().getSimpleName(), cause.getMessage());
+         inboxRepository.markDead(message.id(), describe(cause));
       } else {
-         inboxRepository.markForRetry(message.id(), cause.getMessage(), nextAttemptAt(attempts));
+         inboxRepository.markForRetry(message.id(), describe(cause), nextAttemptAt(attempts));
       }
       return true;
+   }
+
+   private static String describe(Throwable cause) {
+      return cause.getClass().getSimpleName() + ": " + cause.getMessage();
    }
 
    private void apply(InboxMessage message) {

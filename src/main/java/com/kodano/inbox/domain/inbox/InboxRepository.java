@@ -1,6 +1,7 @@
 package com.kodano.inbox.domain.inbox;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,5 +15,9 @@ public interface InboxRepository {
 
    void markForRetry(UUID id, String error, Instant nextAttemptAt);
 
-   void markDead(UUID id, String reasonCode, String detail);
+   void markDead(UUID id, String error);
+
+   List<DeadLetter> findDead();
+
+   boolean requeue(UUID id);
 }

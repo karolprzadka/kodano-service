@@ -1,12 +1,14 @@
 package com.kodano.inbox.infrastructure.database.inbox;
 
 import com.kodano.inbox.domain.inbox.AggregateType;
+import com.kodano.inbox.domain.inbox.DeadLetter;
 import com.kodano.inbox.domain.inbox.InboxMessage;
 import com.kodano.inbox.domain.inbox.InboxRepository;
 import com.kodano.inbox.domain.inbox.InboxSubmission;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -49,14 +51,21 @@ class InboxJdbcRepository implements InboxRepository {
 
    private static final String MARK_DEAD = """
          update inbox_messages
-         set status = 'dead', attempts = attempts + 1, last_error = :detail
+         set status = 'dead', attempts = attempts + 1, last_error = :error
          where id = :id
          """;
 
-   private static final String PARK = """
-         insert into dead_letters (id, inbox_message_id, reason_code, detail, attempts)
-         select :id, id, :reasonCode, :detail, attempts from inbox_messages where id = :inboxMessageId
-         on conflict (inbox_message_id) do nothing
+   private static final String FIND_DEAD = """
+         select id, source_code, external_id, aggregate_type, aggregate_id, attempts, last_error, received_at
+         from inbox_messages
+         where status = 'dead'
+         order by received_at
+         """;
+
+   private static final String REQUEUE = """
+         update inbox_messages
+         set status = 'pending', attempts = 0, next_attempt_at = now(), last_error = null
+         where id = :id and status = 'dead'
          """;
 
    private final NamedParameterJdbcTemplate jdbcTemplate;
@@ -92,15 +101,31 @@ class InboxJdbcRepository implements InboxRepository {
    }
 
    @Override
-   public void markDead(UUID id, String reasonCode, String detail) {
-      jdbcTemplate.update(PARK, new MapSqlParameterSource()
-            .addValue("id", UUID.randomUUID())
-            .addValue("inboxMessageId", id)
-            .addValue("reasonCode", reasonCode)
-            .addValue("detail", detail));
+   public void markDead(UUID id, String error) {
       jdbcTemplate.update(MARK_DEAD, new MapSqlParameterSource()
             .addValue("id", id)
-            .addValue("detail", detail));
+            .addValue("error", error));
+   }
+
+   @Override
+   public List<DeadLetter> findDead() {
+      return jdbcTemplate.query(FIND_DEAD, InboxJdbcRepository::toDeadLetter);
+   }
+
+   @Override
+   public boolean requeue(UUID id) {
+      return jdbcTemplate.update(REQUEUE, new MapSqlParameterSource("id", id)) == 1;
+   }
+
+   private static DeadLetter toDeadLetter(ResultSet row, int rowNumber) throws SQLException {
+      return new DeadLetter(row.getObject("id", UUID.class),
+            row.getString("source_code"),
+            row.getString("external_id"),
+            AggregateType.valueOf(row.getString("aggregate_type")),
+            row.getString("aggregate_id"),
+            row.getInt("attempts"),
+            row.getString("last_error"),
+            row.getTimestamp("received_at").toInstant());
    }
 
    private static InboxMessage toMessage(ResultSet row, int rowNumber) throws SQLException {

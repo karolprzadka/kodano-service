@@ -1,5 +1,6 @@
 package com.kodano.inbox.api.error;
 
+import com.kodano.inbox.api.deadletter.DeadLetterNotFoundException;
 import com.kodano.inbox.api.order.OrderNotFoundException;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
@@ -27,8 +28,8 @@ class GlobalExceptionHandler {
       return Problems.of(HttpStatus.BAD_REQUEST, ErrorCode.MALFORMED_EVENT, UNREADABLE_BODY);
    }
 
-   @ExceptionHandler(OrderNotFoundException.class)
-   ProblemDetail onMissingOrder(OrderNotFoundException exception) {
+   @ExceptionHandler({OrderNotFoundException.class, DeadLetterNotFoundException.class})
+   ProblemDetail onMissingResource(RuntimeException exception) {
       return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, exception.getMessage());
    }
 }

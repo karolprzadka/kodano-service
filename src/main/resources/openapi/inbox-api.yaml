@@ -324,26 +324,26 @@ components:
             format: int64
 
     DeadLetterDto:
+      description: Inbox message parked with status dead, retried by its inbox id
       type: object
-      required: [id, inboxMessageId, reasonCode, parkedAt]
+      required: [id, sourceCode, externalId, attempts]
       properties:
         id:
-          type: string
-          format: uuid
-        inboxMessageId:
           type: string
           format: uuid
         sourceCode:
           type: string
         externalId:
           type: string
-        reasonCode:
+        aggregateType:
           type: string
-        detail:
+        aggregateId:
           type: string
         attempts:
           type: integer
-        parkedAt:
+        lastError:
+          type: string
+        receivedAt:
           type: string
           format: date-time
 
