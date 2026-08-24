@@ -15,5 +15,17 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/kodano
+      DB_USER: kodano
+      DB_PASSWORD: kodano
+    ports:
+      - "8080:8080"
+
 volumes:
   postgres_data:
