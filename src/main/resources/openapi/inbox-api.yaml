@@ -310,18 +310,35 @@ components:
 
     DeviceReconciliationDto:
       type: object
-      required: [deviceId, acceptedCount, missingSeqs]
+      required: [deviceId, status, acceptedCount, amountMinorChecksum, missingRanges]
       properties:
         deviceId:
           type: string
+        status:
+          type: string
+          enum: [COMPLETE, SEQUENCE_GAP_DETECTED]
         acceptedCount:
           type: integer
           format: int64
-        missingSeqs:
+        amountMinorChecksum:
+          type: integer
+          format: int64
+        missingRanges:
+          description: Missing sequence numbers collapsed into ranges, both ends inclusive
           type: array
           items:
-            type: integer
-            format: int64
+            $ref: '#/components/schemas/SeqRangeDto'
+
+    SeqRangeDto:
+      type: object
+      required: [from, to]
+      properties:
+        from:
+          type: integer
+          format: int64
+        to:
+          type: integer
+          format: int64
 
     DeadLetterDto:
       description: Inbox message parked with status dead, retried by its inbox id

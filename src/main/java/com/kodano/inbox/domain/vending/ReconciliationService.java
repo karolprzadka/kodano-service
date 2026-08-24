@@ -16,7 +16,8 @@ public class ReconciliationService {
       if (!VENDING.equals(source)) {
          throw new UnsupportedSourceException(source);
       }
-      return new DeviceReconciliation(deviceId, vendingSaleRepository.countSales(deviceId, day),
-            vendingSaleRepository.findMissingSeqs(deviceId));
+      DeviceTotals totals = vendingSaleRepository.totals(deviceId, day);
+      return new DeviceReconciliation(deviceId, totals.acceptedCount(), totals.amountMinorChecksum(),
+            vendingSaleRepository.findMissingRanges(deviceId));
    }
 }

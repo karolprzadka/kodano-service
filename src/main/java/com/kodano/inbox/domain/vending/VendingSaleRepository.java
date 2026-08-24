@@ -7,7 +7,7 @@ public interface VendingSaleRepository {
 
    void insertIfAbsent(VendingSale sale);
 
-   long countSales(String deviceId, LocalDate day);
+   DeviceTotals totals(String deviceId, LocalDate day);
 
-   List<Long> findMissingSeqs(String deviceId);
+   List<SeqRange> findMissingRanges(String deviceId);
 }
